@@ -1,0 +1,63 @@
+# -- Symfony2 -----------------------------------------
+
+app/bootstrap.php.cache
+app/config/parameters.ini
+app/config/parameters.yml
+app/config/config_*.yml
+app/cache/*
+app/logs/*
+app/data/*
+app/SymfonyRequirements.php
+node_modules/
+web/app_*.php
+web/bundles/*
+web/css/compiled/*
+web/js/compiled/*
+web/users-files/*
+web/vendor/*
+web/uploads/*
+vendor/*
+data/*
+bin/*
+
+
+# -- Composer -----------------------------------------
+
+composer.phar
+composer.lock
+package-lock.json
+app/check.php
+web/config.php
+
+# -- Editors ------------------------------------------
+
+# phpstorm
+.idea/
+
+# sublimetext
+/*.sublime-project
+*.sublime-workspace
+
+# -- Operating Systems --------------------------------
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+.*
+!.bowerrc
+!.gitignore
+*~
+
+# Mac OS X
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+

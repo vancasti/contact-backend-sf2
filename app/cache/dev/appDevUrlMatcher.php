@@ -27,106 +27,6 @@ class appDevUrlMatcher extends Symfony\Bundle\FrameworkBundle\Routing\Redirectab
         $context = $this->context;
         $request = $this->request;
 
-        // _welcome
-        if (rtrim($pathinfo, '/') === '') {
-            if (substr($pathinfo, -1) !== '/') {
-                return $this->redirect($pathinfo.'/', '_welcome');
-            }
-
-            return array (  '_controller' => 'Symfony\\Bundle\\FrameworkBundle\\Controller\\RedirectController::redirectAction',  'route' => 'get_notes',  'permanent' => true,  '_route' => '_welcome',);
-        }
-
-        if (0 === strpos($pathinfo, '/notes')) {
-            // get_notes
-            if (preg_match('#^/notes(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
-                    $allow = array_merge($allow, array('GET', 'HEAD'));
-                    goto not_get_notes;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'get_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::getNotesAction',  '_format' => NULL,));
-            }
-            not_get_notes:
-
-            // new_note
-            if (0 === strpos($pathinfo, '/notes/new') && preg_match('#^/notes/new(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
-                    $allow = array_merge($allow, array('GET', 'HEAD'));
-                    goto not_new_note;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'new_note')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::newNoteAction',  '_format' => NULL,));
-            }
-            not_new_note:
-
-            // get_note
-            if (preg_match('#^/notes/(?P<id>[^/\\.]++)(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
-                    $allow = array_merge($allow, array('GET', 'HEAD'));
-                    goto not_get_note;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'get_note')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::getNoteAction',  '_format' => NULL,));
-            }
-            not_get_note:
-
-            // post_notes
-            if (preg_match('#^/notes(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if ($this->context->getMethod() != 'POST') {
-                    $allow[] = 'POST';
-                    goto not_post_notes;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'post_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::postNotesAction',  '_format' => NULL,));
-            }
-            not_post_notes:
-
-            // edit_notes
-            if (preg_match('#^/notes/(?P<id>[^/]++)/edit(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
-                    $allow = array_merge($allow, array('GET', 'HEAD'));
-                    goto not_edit_notes;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'edit_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::editNotesAction',  '_format' => NULL,));
-            }
-            not_edit_notes:
-
-            // put_notes
-            if (preg_match('#^/notes/(?P<id>[^/\\.]++)(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if ($this->context->getMethod() != 'PUT') {
-                    $allow[] = 'PUT';
-                    goto not_put_notes;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'put_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::putNotesAction',  '_format' => NULL,));
-            }
-            not_put_notes:
-
-            // delete_notes
-            if (preg_match('#^/notes/(?P<id>[^/\\.]++)(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if ($this->context->getMethod() != 'DELETE') {
-                    $allow[] = 'DELETE';
-                    goto not_delete_notes;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'delete_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::deleteNotesAction',  '_format' => NULL,));
-            }
-            not_delete_notes:
-
-            // remove_notes
-            if (preg_match('#^/notes/(?P<id>[^/]++)/remove(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
-                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
-                    $allow = array_merge($allow, array('GET', 'HEAD'));
-                    goto not_remove_notes;
-                }
-
-                return $this->mergeDefaults(array_replace($matches, array('_route' => 'remove_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::removeNotesAction',  '_format' => NULL,));
-            }
-            not_remove_notes:
-
-        }
-
         if (0 === strpos($pathinfo, '/_')) {
             // _wdt
             if (0 === strpos($pathinfo, '/_wdt') && preg_match('#^/_wdt/(?P<token>[^/]++)$#s', $pathinfo, $matches)) {
@@ -222,16 +122,30 @@ class appDevUrlMatcher extends Symfony\Bundle\FrameworkBundle\Routing\Redirectab
 
         }
 
-        // nelmio_api_doc_index
-        if (0 === strpos($pathinfo, '/api/doc') && preg_match('#^/api/doc(?:/(?P<view>[^/]++))?$#s', $pathinfo, $matches)) {
-            if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
-                $allow = array_merge($allow, array('GET', 'HEAD'));
-                goto not_nelmio_api_doc_index;
-            }
+        if (0 === strpos($pathinfo, '/api')) {
+            // nelmio_api_doc_index
+            if (0 === strpos($pathinfo, '/api/doc') && preg_match('#^/api/doc(?:/(?P<view>[^/]++))?$#s', $pathinfo, $matches)) {
+                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
+                    $allow = array_merge($allow, array('GET', 'HEAD'));
+                    goto not_nelmio_api_doc_index;
+                }
 
-            return $this->mergeDefaults(array_replace($matches, array('_route' => 'nelmio_api_doc_index')), array (  '_controller' => 'Nelmio\\ApiDocBundle\\Controller\\ApiDocController::indexAction',  'view' => 'default',));
+                return $this->mergeDefaults(array_replace($matches, array('_route' => 'nelmio_api_doc_index')), array (  '_controller' => 'Nelmio\\ApiDocBundle\\Controller\\ApiDocController::indexAction',  'view' => 'default',));
+            }
+            not_nelmio_api_doc_index:
+
+            // get_notes
+            if (0 === strpos($pathinfo, '/api/v1/notes') && preg_match('#^/api/v1/notes(?:\\.(?P<_format>xml|json|html))?$#s', $pathinfo, $matches)) {
+                if (!in_array($this->context->getMethod(), array('GET', 'HEAD'))) {
+                    $allow = array_merge($allow, array('GET', 'HEAD'));
+                    goto not_get_notes;
+                }
+
+                return $this->mergeDefaults(array_replace($matches, array('_route' => 'get_notes')), array (  '_controller' => 'AppBundle\\Controller\\NoteController::getNotesAction',  '_format' => NULL,));
+            }
+            not_get_notes:
+
         }
-        not_nelmio_api_doc_index:
 
         throw 0 < count($allow) ? new MethodNotAllowedException(array_unique($allow)) : new ResourceNotFoundException();
     }
