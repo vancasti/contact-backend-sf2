@@ -66,7 +66,7 @@ $currentKey .= $char;
 }
 }
 if (null !== $currentKey) {
-throw new \InvalidArgumentException(sprintf('Malformed path. Path must end with "]".'));
+throw new \InvalidArgumentException('Malformed path. Path must end with "]".');
 }
 return $value;
 }
@@ -194,7 +194,7 @@ $this->headers[$key] = $values;
 $this->headers[$key] = array_merge($this->headers[$key], $values);
 }
 if ('cache-control'=== $key) {
-$this->cacheControl = $this->parseCacheControl($values[0]);
+$this->cacheControl = $this->parseCacheControl(implode(', ', $this->headers[$key]));
 }
 }
 public function has($key)
@@ -321,6 +321,9 @@ $file = new UploadedFile($file['tmp_name'], $file['name'], $file['type'], $file[
 }
 } else {
 $file = array_map(array($this,'convertFileInformation'), $file);
+if (array_keys($keys) === $keys) {
+$file = array_filter($file);
+}
 }
 }
 return $file;
@@ -376,7 +379,7 @@ $authorizationHeader = $this->parameters['REDIRECT_HTTP_AUTHORIZATION'];
 if (null !== $authorizationHeader) {
 if (0 === stripos($authorizationHeader,'basic ')) {
 $exploded = explode(':', base64_decode(substr($authorizationHeader, 6)), 2);
-if (count($exploded) == 2) {
+if (2 == count($exploded)) {
 list($headers['PHP_AUTH_USER'], $headers['PHP_AUTH_PW']) = $exploded;
 }
 } elseif (empty($this->parameters['PHP_AUTH_DIGEST']) && (0 === stripos($authorizationHeader,'digest '))) {
@@ -401,6 +404,7 @@ return $headers;
 }
 namespace Symfony\Component\HttpFoundation
 {
+use Symfony\Component\HttpFoundation\Exception\ConflictingHeadersException;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
 class Request
 {
@@ -571,22 +575,22 @@ self::$requestFactory = $callable;
 public function duplicate(array $query = null, array $request = null, array $attributes = null, array $cookies = null, array $files = null, array $server = null)
 {
 $dup = clone $this;
-if ($query !== null) {
+if (null !== $query) {
 $dup->query = new ParameterBag($query);
 }
-if ($request !== null) {
+if (null !== $request) {
 $dup->request = new ParameterBag($request);
 }
-if ($attributes !== null) {
+if (null !== $attributes) {
 $dup->attributes = new ParameterBag($attributes);
 }
-if ($cookies !== null) {
+if (null !== $cookies) {
 $dup->cookies = new ParameterBag($cookies);
 }
-if ($files !== null) {
+if (null !== $files) {
 $dup->files = new FileBag($files);
 }
-if ($server !== null) {
+if (null !== $server) {
 $dup->server = new ServerBag($server);
 $dup->headers = new HeaderBag($dup->server->getHeaders());
 }
@@ -625,14 +629,23 @@ $content = $this->getContent();
 } catch (\LogicException $e) {
 return trigger_error($e, E_USER_ERROR);
 }
+$cookieHeader ='';
+$cookies = array();
+foreach ($this->cookies as $k => $v) {
+$cookies[] = $k.'='.$v;
+}
+if (!empty($cookies)) {
+$cookieHeader ='Cookie: '.implode('; ', $cookies)."\r\n";
+}
 return
 sprintf('%s %s %s', $this->getMethod(), $this->getRequestUri(), $this->server->get('SERVER_PROTOCOL'))."\r\n".
-$this->headers."\r\n".
+$this->headers.
+$cookieHeader."\r\n".
 $content;
 }
 public function overrideGlobals()
 {
-$this->server->set('QUERY_STRING', static::normalizeQueryString(http_build_query($this->query->all(), null,'&')));
+$this->server->set('QUERY_STRING', static::normalizeQueryString(http_build_query($this->query->all(),'','&')));
 $_GET = $this->query->all();
 $_POST = $this->request->all();
 $_SERVER = $this->server->all();
@@ -750,30 +763,27 @@ $ip = $this->server->get('REMOTE_ADDR');
 if (!$this->isFromTrustedProxy()) {
 return array($ip);
 }
-if (self::$trustedHeaders[self::HEADER_FORWARDED] && $this->headers->has(self::$trustedHeaders[self::HEADER_FORWARDED])) {
+$hasTrustedForwardedHeader = self::$trustedHeaders[self::HEADER_FORWARDED] && $this->headers->has(self::$trustedHeaders[self::HEADER_FORWARDED]);
+$hasTrustedClientIpHeader = self::$trustedHeaders[self::HEADER_CLIENT_IP] && $this->headers->has(self::$trustedHeaders[self::HEADER_CLIENT_IP]);
+if ($hasTrustedForwardedHeader) {
 $forwardedHeader = $this->headers->get(self::$trustedHeaders[self::HEADER_FORWARDED]);
 preg_match_all('{(for)=("?\[?)([a-z0-9\.:_\-/]*)}', $forwardedHeader, $matches);
-$clientIps = $matches[3];
-} elseif (self::$trustedHeaders[self::HEADER_CLIENT_IP] && $this->headers->has(self::$trustedHeaders[self::HEADER_CLIENT_IP])) {
-$clientIps = array_map('trim', explode(',', $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_IP])));
+$forwardedClientIps = $matches[3];
+$forwardedClientIps = $this->normalizeAndFilterClientIps($forwardedClientIps, $ip);
+$clientIps = $forwardedClientIps;
 }
-$clientIps[] = $ip; $firstTrustedIp = null;
-foreach ($clientIps as $key => $clientIp) {
-if (preg_match('{((?:\d+\.){3}\d+)\:\d+}', $clientIp, $match)) {
-$clientIps[$key] = $clientIp = $match[1];
+if ($hasTrustedClientIpHeader) {
+$xForwardedForClientIps = array_map('trim', explode(',', $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_IP])));
+$xForwardedForClientIps = $this->normalizeAndFilterClientIps($xForwardedForClientIps, $ip);
+$clientIps = $xForwardedForClientIps;
 }
-if (!filter_var($clientIp, FILTER_VALIDATE_IP)) {
-unset($clientIps[$key]);
-continue;
+if ($hasTrustedForwardedHeader && $hasTrustedClientIpHeader && $forwardedClientIps !== $xForwardedForClientIps) {
+throw new ConflictingHeadersException('The request has both a trusted Forwarded header and a trusted Client IP header, conflicting with each other with regards to the originating IP addresses of the request. This is the result of a misconfiguration. You should either configure your proxy only to send one of these headers, or configure Symfony to distrust one of them.');
 }
-if (IpUtils::checkIp($clientIp, self::$trustedProxies)) {
-unset($clientIps[$key]);
-if (null === $firstTrustedIp) {
-$firstTrustedIp = $clientIp;
+if (!$hasTrustedForwardedHeader && !$hasTrustedClientIpHeader) {
+return $this->normalizeAndFilterClientIps(array(), $ip);
 }
-}
-}
-return $clientIps ? array_reverse($clientIps) : array($firstTrustedIp);
+return $clientIps;
 }
 public function getClientIp()
 {
@@ -813,14 +823,14 @@ public function getPort()
 {
 if ($this->isFromTrustedProxy()) {
 if (self::$trustedHeaders[self::HEADER_CLIENT_PORT] && $port = $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_PORT])) {
-return $port;
+return (int) $port;
 }
 if (self::$trustedHeaders[self::HEADER_CLIENT_PROTO] &&'https'=== $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_PROTO],'http')) {
 return 443;
 }
 }
 if ($host = $this->headers->get('HOST')) {
-if ($host[0] ==='[') {
+if ('['=== $host[0]) {
 $pos = strpos($host,':', strrpos($host,']'));
 } else {
 $pos = strrpos($host,':');
@@ -853,7 +863,7 @@ public function getHttpHost()
 {
 $scheme = $this->getScheme();
 $port = $this->getPort();
-if (('http'== $scheme && $port == 80) || ('https'== $scheme && $port == 443)) {
+if (('http'== $scheme && 80 == $port) || ('https'== $scheme && 443 == $port)) {
 return $this->getHost();
 }
 return $this->getHost().':'.$port;
@@ -921,8 +931,8 @@ return !empty($https) &&'off'!== strtolower($https);
 public function getHost()
 {
 if ($this->isFromTrustedProxy() && self::$trustedHeaders[self::HEADER_CLIENT_HOST] && $host = $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_HOST])) {
-$elements = explode(',', $host);
-$host = $elements[count($elements) - 1];
+$elements = explode(',', $host, 2);
+$host = $elements[0];
 } elseif (!$host = $this->headers->get('HOST')) {
 if (!$host = $this->server->get('SERVER_NAME')) {
 $host = $this->server->get('SERVER_ADDR','');
@@ -1004,9 +1014,9 @@ static::$formats[$format] = is_array($mimeTypes) ? $mimeTypes : array($mimeTypes
 public function getRequestFormat($default ='html')
 {
 if (null === $this->format) {
-$this->format = $this->get('_format', $default);
+$this->format = $this->get('_format');
 }
-return $this->format;
+return null === $this->format ? $default : $this->format;
 }
 public function setRequestFormat($format)
 {
@@ -1041,12 +1051,16 @@ return $this->getMethod() === strtoupper($method);
 }
 public function isMethodSafe()
 {
+return in_array($this->getMethod(), 0 < func_num_args() && !func_get_arg(0) ? array('GET','HEAD','OPTIONS','TRACE') : array('GET','HEAD'));
+}
+public function isMethodCacheable()
+{
 return in_array($this->getMethod(), array('GET','HEAD'));
 }
 public function getContent($asResource = false)
 {
 $currentContentIsResource = is_resource($this->content);
-if (PHP_VERSION_ID < 50600 && false === $this->content) {
+if (\PHP_VERSION_ID < 50600 && false === $this->content) {
 throw new \LogicException('getContent() can only be called once when using the resource return type and PHP below 5.6.');
 }
 if (true === $asResource) {
@@ -1067,7 +1081,7 @@ if ($currentContentIsResource) {
 rewind($this->content);
 return stream_get_contents($this->content);
 }
-if (null === $this->content) {
+if (null === $this->content || false === $this->content) {
 $this->content = file_get_contents('php://input');
 }
 return $this->content;
@@ -1118,7 +1132,7 @@ $lang = $codes[1];
 }
 } else {
 for ($i = 0, $max = count($codes); $i < $max; ++$i) {
-if ($i === 0) {
+if (0 === $i) {
 $lang = strtolower($codes[0]);
 } else {
 $lang .='_'.strtoupper($codes[$i]);
@@ -1167,14 +1181,14 @@ $this->server->remove('IIS_WasUrlRewritten');
 } elseif ($this->headers->has('X_REWRITE_URL')) {
 $requestUri = $this->headers->get('X_REWRITE_URL');
 $this->headers->remove('X_REWRITE_URL');
-} elseif ($this->server->get('IIS_WasUrlRewritten') =='1'&& $this->server->get('UNENCODED_URL') !='') {
+} elseif ('1'== $this->server->get('IIS_WasUrlRewritten') &&''!= $this->server->get('UNENCODED_URL')) {
 $requestUri = $this->server->get('UNENCODED_URL');
 $this->server->remove('UNENCODED_URL');
 $this->server->remove('IIS_WasUrlRewritten');
 } elseif ($this->server->has('REQUEST_URI')) {
 $requestUri = $this->server->get('REQUEST_URI');
 $schemeAndHttpHost = $this->getSchemeAndHttpHost();
-if (strpos($requestUri, $schemeAndHttpHost) === 0) {
+if (0 === strpos($requestUri, $schemeAndHttpHost)) {
 $requestUri = substr($requestUri, strlen($schemeAndHttpHost));
 }
 } elseif ($this->server->has('ORIG_PATH_INFO')) {
@@ -1210,6 +1224,9 @@ $baseUrl ='/'.$seg.$baseUrl;
 } while ($last > $index && (false !== $pos = strpos($path, $baseUrl)) && 0 != $pos);
 }
 $requestUri = $this->getRequestUri();
+if (''!== $requestUri &&'/'!== $requestUri[0]) {
+$requestUri ='/'.$requestUri;
+}
 if ($baseUrl && false !== $prefix = $this->getUrlencodedPrefix($requestUri, $baseUrl)) {
 return $prefix;
 }
@@ -1224,7 +1241,7 @@ $basename = basename($baseUrl);
 if (empty($basename) || !strpos(rawurldecode($truncatedRequestUri), $basename)) {
 return'';
 }
-if (strlen($requestUri) >= strlen($baseUrl) && (false !== $pos = strpos($requestUri, $baseUrl)) && $pos !== 0) {
+if (strlen($requestUri) >= strlen($baseUrl) && (false !== $pos = strpos($requestUri, $baseUrl)) && 0 !== $pos) {
 $baseUrl = substr($requestUri, 0, $pos + strlen($baseUrl));
 }
 return rtrim($baseUrl,'/'.DIRECTORY_SEPARATOR);
@@ -1252,8 +1269,11 @@ $baseUrl = $this->getBaseUrl();
 if (null === ($requestUri = $this->getRequestUri())) {
 return'/';
 }
-if ($pos = strpos($requestUri,'?')) {
+if (false !== $pos = strpos($requestUri,'?')) {
 $requestUri = substr($requestUri, 0, $pos);
+}
+if (''!== $requestUri &&'/'!== $requestUri[0]) {
+$requestUri ='/'.$requestUri;
 }
 $pathInfo = substr($requestUri, strlen($baseUrl));
 if (null !== $baseUrl && (false === $pathInfo ||''=== $pathInfo)) {
@@ -1265,7 +1285,7 @@ return (string) $pathInfo;
 }
 protected static function initializeFormats()
 {
-static::$formats = array('html'=> array('text/html','application/xhtml+xml'),'txt'=> array('text/plain'),'js'=> array('application/javascript','application/x-javascript','text/javascript'),'css'=> array('text/css'),'json'=> array('application/json','application/x-json'),'xml'=> array('text/xml','application/xml','application/x-xml'),'rdf'=> array('application/rdf+xml'),'atom'=> array('application/atom+xml'),'rss'=> array('application/rss+xml'),'form'=> array('application/x-www-form-urlencoded'),
+static::$formats = array('html'=> array('text/html','application/xhtml+xml'),'txt'=> array('text/plain'),'js'=> array('application/javascript','application/x-javascript','text/javascript'),'css'=> array('text/css'),'json'=> array('application/json','application/x-json'),'jsonld'=> array('application/ld+json'),'xml'=> array('text/xml','application/xml','application/x-xml'),'rdf'=> array('application/rdf+xml'),'atom'=> array('application/atom+xml'),'rss'=> array('application/rss+xml'),'form'=> array('application/x-www-form-urlencoded'),
 );
 }
 private function setPhpDefaultLocale($locale)
@@ -1302,6 +1322,26 @@ return new static($query, $request, $attributes, $cookies, $files, $server, $con
 private function isFromTrustedProxy()
 {
 return self::$trustedProxies && IpUtils::checkIp($this->server->get('REMOTE_ADDR'), self::$trustedProxies);
+}
+private function normalizeAndFilterClientIps(array $clientIps, $ip)
+{
+$clientIps[] = $ip; $firstTrustedIp = null;
+foreach ($clientIps as $key => $clientIp) {
+if (preg_match('{((?:\d+\.){3}\d+)\:\d+}', $clientIp, $match)) {
+$clientIps[$key] = $clientIp = $match[1];
+}
+if (!filter_var($clientIp, FILTER_VALIDATE_IP)) {
+unset($clientIps[$key]);
+continue;
+}
+if (IpUtils::checkIp($clientIp, self::$trustedProxies)) {
+unset($clientIps[$key]);
+if (null === $firstTrustedIp) {
+$firstTrustedIp = $clientIp;
+}
+}
+}
+return $clientIps ? array_reverse($clientIps) : array($firstTrustedIp);
 }
 }
 }
@@ -1361,7 +1401,8 @@ protected $charset;
 public static $statusTexts = array(
 100 =>'Continue',
 101 =>'Switching Protocols',
-102 =>'Processing', 200 =>'OK',
+102 =>'Processing', 103 =>'Early Hints',
+200 =>'OK',
 201 =>'Created',
 202 =>'Accepted',
 203 =>'Non-Authoritative Information',
@@ -1389,10 +1430,10 @@ public static $statusTexts = array(
 410 =>'Gone',
 411 =>'Length Required',
 412 =>'Precondition Failed',
-413 =>'Request Entity Too Large',
-414 =>'Request-URI Too Long',
+413 =>'Payload Too Large',
+414 =>'URI Too Long',
 415 =>'Unsupported Media Type',
-416 =>'Requested Range Not Satisfiable',
+416 =>'Range Not Satisfiable',
 417 =>'Expectation Failed',
 418 =>'I\'m a teapot', 421 =>'Misdirected Request', 422 =>'Unprocessable Entity', 423 =>'Locked', 424 =>'Failed Dependency', 425 =>'Reserved for WebDAV advanced collections expired proposal', 426 =>'Upgrade Required', 428 =>'Precondition Required', 429 =>'Too Many Requests', 431 =>'Request Header Fields Too Large', 451 =>'Unavailable For Legal Reasons', 500 =>'Internal Server Error',
 501 =>'Not Implemented',
@@ -1400,7 +1441,7 @@ public static $statusTexts = array(
 503 =>'Service Unavailable',
 504 =>'Gateway Timeout',
 505 =>'HTTP Version Not Supported',
-506 =>'Variant Also Negotiates (Experimental)', 507 =>'Insufficient Storage', 508 =>'Loop Detected', 510 =>'Not Extended', 511 =>'Network Authentication Required', );
+506 =>'Variant Also Negotiates', 507 =>'Insufficient Storage', 508 =>'Loop Detected', 510 =>'Not Extended', 511 =>'Network Authentication Required', );
 public function __construct($content ='', $status = 200, $headers = array())
 {
 $this->headers = new ResponseHeaderBag($headers);
@@ -1494,7 +1535,7 @@ $this->sendHeaders();
 $this->sendContent();
 if (function_exists('fastcgi_finish_request')) {
 fastcgi_finish_request();
-} elseif ('cli'!== PHP_SAPI) {
+} elseif (!\in_array(PHP_SAPI, array('cli','phpdbg'), true)) {
 static::closeOutputBuffers(0, true);
 }
 return $this;
@@ -1761,7 +1802,7 @@ return $this;
 }
 public function isNotModified(Request $request)
 {
-if (!$request->isMethodSafe()) {
+if (!$request->isMethodCacheable()) {
 return false;
 }
 $notModified = false;
@@ -1827,7 +1868,7 @@ public static function closeOutputBuffers($targetLevel, $flush)
 $status = ob_get_status(true);
 $level = count($status);
 $flags = defined('PHP_OUTPUT_HANDLER_REMOVABLE') ? PHP_OUTPUT_HANDLER_REMOVABLE | ($flush ? PHP_OUTPUT_HANDLER_FLUSHABLE : PHP_OUTPUT_HANDLER_CLEANABLE) : -1;
-while ($level-- > $targetLevel && ($s = $status[$level]) && (!isset($s['del']) ? !isset($s['flags']) || $flags === ($s['flags'] & $flags) : $s['del'])) {
+while ($level-- > $targetLevel && ($s = $status[$level]) && (!isset($s['del']) ? !isset($s['flags']) || ($s['flags'] & $flags) === $flags : $s['del'])) {
 if ($flush) {
 ob_end_flush();
 } else {
@@ -1837,7 +1878,7 @@ ob_end_clean();
 }
 protected function ensureIEOverSSLCompatibility(Request $request)
 {
-if (false !== stripos($this->headers->get('Content-Disposition'),'attachment') && preg_match('/MSIE (.*?);/i', $request->server->get('HTTP_USER_AGENT'), $match) == 1 && true === $request->isSecure()) {
+if (false !== stripos($this->headers->get('Content-Disposition'),'attachment') && 1 == preg_match('/MSIE (.*?);/i', $request->server->get('HTTP_USER_AGENT'), $match) && true === $request->isSecure()) {
 if ((int) preg_replace('/(MSIE )(.*?);/','$2', $match[0]) < 9) {
 $this->headers->remove('Cache-Control');
 }
@@ -2133,14 +2174,14 @@ return method_exists($this,'get'.strtr($id, $this->underscoreMap).'Service');
 public function get($id, $invalidBehavior = self::EXCEPTION_ON_INVALID_REFERENCE)
 {
 for ($i = 2;;) {
-if ('service_container'=== $id) {
-return $this;
-}
 if (isset($this->aliases[$id])) {
 $id = $this->aliases[$id];
 }
 if (isset($this->services[$id]) || array_key_exists($id, $this->services)) {
 return $this->services[$id];
+}
+if ('service_container'=== $id) {
+return $this;
 }
 if (isset($this->loading[$id])) {
 throw new ServiceCircularReferenceException($id, array_keys($this->loading));
@@ -2157,10 +2198,10 @@ if (!$id) {
 throw new ServiceNotFoundException($id);
 }
 $alternatives = array();
-foreach ($this->services as $key => $associatedService) {
-$lev = levenshtein($id, $key);
-if ($lev <= strlen($id) / 3 || false !== strpos($key, $id)) {
-$alternatives[] = $key;
+foreach ($this->getServiceIds() as $knownId) {
+$lev = levenshtein($id, $knownId);
+if ($lev <= strlen($id) / 3 || false !== strpos($knownId, $id)) {
+$alternatives[] = $knownId;
 }
 }
 throw new ServiceNotFoundException($id, null, null, $alternatives);
@@ -2189,11 +2230,11 @@ return $service;
 public function initialized($id)
 {
 $id = strtolower($id);
-if ('service_container'=== $id) {
-return true;
-}
 if (isset($this->aliases[$id])) {
 $id = $this->aliases[$id];
+}
+if ('service_container'=== $id) {
+return true;
 }
 return isset($this->services[$id]) || array_key_exists($id, $this->services);
 }
@@ -2276,7 +2317,7 @@ throw new InvalidArgumentException(sprintf('The parent scope "%s" does not exist
 }
 $this->scopes[$name] = $parentScope;
 $this->scopeChildren[$name] = array();
-while ($parentScope !== self::SCOPE_CONTAINER) {
+while (self::SCOPE_CONTAINER !== $parentScope) {
 $this->scopeChildren[$parentScope][] = $name;
 $parentScope = $this->scopes[$parentScope];
 }
@@ -2381,11 +2422,11 @@ protected $booted = false;
 protected $name;
 protected $startTime;
 protected $loadClassCache;
-const VERSION ='2.7.14';
-const VERSION_ID = 20714;
+const VERSION ='2.7.45';
+const VERSION_ID = 20745;
 const MAJOR_VERSION = 2;
 const MINOR_VERSION = 7;
-const RELEASE_VERSION = 14;
+const RELEASE_VERSION = 45;
 const EXTRA_VERSION ='';
 const END_OF_MAINTENANCE ='05/2018';
 const END_OF_LIFE ='05/2019';
@@ -2401,13 +2442,13 @@ $this->startTime = microtime(true);
 $defClass = new \ReflectionMethod($this,'init');
 $defClass = $defClass->getDeclaringClass()->name;
 if (__CLASS__ !== $defClass) {
-@trigger_error(sprintf('Calling the %s::init() method is deprecated since version 2.3 and will be removed in 3.0. Move your logic to the constructor method instead.', $defClass), E_USER_DEPRECATED);
+@trigger_error(sprintf('Calling the %s::init() method is deprecated since Symfony 2.3 and will be removed in 3.0. Move your logic to the constructor method instead.', $defClass), E_USER_DEPRECATED);
 $this->init();
 }
 }
 public function init()
 {
-@trigger_error('The '.__METHOD__.' method is deprecated since version 2.3 and will be removed in 3.0. Move your logic to the constructor method instead.', E_USER_DEPRECATED);
+@trigger_error('The '.__METHOD__.' method is deprecated since Symfony 2.3 and will be removed in 3.0. Move your logic to the constructor method instead.', E_USER_DEPRECATED);
 }
 public function __clone()
 {
@@ -2471,7 +2512,7 @@ return $this->bundles;
 }
 public function isClassInActiveBundle($class)
 {
-@trigger_error('The '.__METHOD__.' method is deprecated since version 2.6 and will be removed in version 3.0.', E_USER_DEPRECATED);
+@trigger_error('The '.__METHOD__.' method is deprecated since Symfony 2.6 and will be removed in version 3.0.', E_USER_DEPRECATED);
 foreach ($this->getBundles() as $bundle) {
 if (0 === strpos($class, $bundle->getNamespace())) {
 return true;
@@ -2538,6 +2579,9 @@ public function getName()
 {
 if (null === $this->name) {
 $this->name = preg_replace('/[^a-zA-Z0-9_]+/','', basename($this->rootDir));
+if (ctype_digit($this->name[0])) {
+$this->name ='_'.$this->name;
+}
 }
 return $this->name;
 }
@@ -2627,8 +2671,8 @@ $name = $directChildren[$name];
 array_unshift($bundleMap, $this->bundles[$name]);
 $hierarchy[] = $name;
 }
-foreach ($hierarchy as $bundle) {
-$this->bundleMap[$bundle] = $bundleMap;
+foreach ($hierarchy as $hierarchyBundle) {
+$this->bundleMap[$hierarchyBundle] = $bundleMap;
 array_pop($bundleMap);
 }
 }
@@ -2662,11 +2706,14 @@ $this->container->get('cache_warmer')->warmUp($this->container->getParameter('ke
 protected function getKernelParameters()
 {
 $bundles = array();
+$bundlesMetadata = array();
 foreach ($this->bundles as $name => $bundle) {
 $bundles[$name] = get_class($bundle);
+$bundlesMetadata[$name] = array('parent'=> $bundle->getParent(),'path'=> $bundle->getPath(),'namespace'=> $bundle->getNamespace(),
+);
 }
 return array_merge(
-array('kernel.root_dir'=> realpath($this->rootDir) ?: $this->rootDir,'kernel.environment'=> $this->environment,'kernel.debug'=> $this->debug,'kernel.name'=> $this->name,'kernel.cache_dir'=> realpath($this->getCacheDir()) ?: $this->getCacheDir(),'kernel.logs_dir'=> realpath($this->getLogDir()) ?: $this->getLogDir(),'kernel.bundles'=> $bundles,'kernel.charset'=> $this->getCharset(),'kernel.container_class'=> $this->getContainerClass(),
+array('kernel.root_dir'=> realpath($this->rootDir) ?: $this->rootDir,'kernel.environment'=> $this->environment,'kernel.debug'=> $this->debug,'kernel.name'=> $this->name,'kernel.cache_dir'=> realpath($this->getCacheDir()) ?: $this->getCacheDir(),'kernel.logs_dir'=> realpath($this->getLogDir()) ?: $this->getLogDir(),'kernel.bundles'=> $bundles,'kernel.bundles_metadata'=> $bundlesMetadata,'kernel.charset'=> $this->getCharset(),'kernel.container_class'=> $this->getContainerClass(),
 ),
 $this->getEnvParameters()
 );
@@ -2766,7 +2813,7 @@ $output .= $rawChunk.$token[1];
 do {
 $token = $tokens[++$i];
 $output .= isset($token[1]) &&'b"'!== $token ? $token[1] : $token;
-} while ($token[0] !== T_END_HEREDOC);
+} while (T_END_HEREDOC !== $token[0]);
 $rawChunk ='';
 } elseif (T_WHITESPACE === $token[0]) {
 if ($ignoreSpace) {
@@ -2784,7 +2831,7 @@ $ignoreSpace = true;
 }
 }
 $output .= $rawChunk;
-if (PHP_VERSION_ID >= 70000) {
+if (\PHP_VERSION_ID >= 70000) {
 unset($tokens, $rawChunk);
 gc_mem_caches();
 }
@@ -2798,52 +2845,6 @@ public function unserialize($data)
 {
 list($environment, $debug) = unserialize($data);
 $this->__construct($environment, $debug);
-}
-}
-}
-namespace Symfony\Component\ClassLoader
-{
-class ApcClassLoader
-{
-private $prefix;
-protected $decorated;
-public function __construct($prefix, $decorated)
-{
-if (!function_exists('apcu_fetch')) {
-throw new \RuntimeException('Unable to use ApcClassLoader as APC is not installed.');
-}
-if (!method_exists($decorated,'findFile')) {
-throw new \InvalidArgumentException('The class finder must implement a "findFile" method.');
-}
-$this->prefix = $prefix;
-$this->decorated = $decorated;
-}
-public function register($prepend = false)
-{
-spl_autoload_register(array($this,'loadClass'), true, $prepend);
-}
-public function unregister()
-{
-spl_autoload_unregister(array($this,'loadClass'));
-}
-public function loadClass($class)
-{
-if ($file = $this->findFile($class)) {
-require $file;
-return true;
-}
-}
-public function findFile($class)
-{
-$file = apcu_fetch($this->prefix.$class, $success);
-if (!$success) {
-apcu_store($this->prefix.$class, $file = $this->decorated->findFile($class) ?: null);
-}
-return $file;
-}
-public function __call($method, $args)
-{
-return call_user_func_array(array($this->decorated, $method), $args);
 }
 }
 }
@@ -3009,7 +3010,7 @@ $this->debug = (bool) $debug;
 }
 public function __toString()
 {
-@trigger_error('ConfigCache::__toString() is deprecated since version 2.7 and will be removed in 3.0. Use the getPath() method instead.', E_USER_DEPRECATED);
+@trigger_error('ConfigCache::__toString() is deprecated since Symfony 2.7 and will be removed in 3.0. Use the getPath() method instead.', E_USER_DEPRECATED);
 return $this->file;
 }
 public function getPath()
@@ -3028,8 +3029,30 @@ $metadata = $this->getMetaFile();
 if (!is_file($metadata)) {
 return false;
 }
+$e = null;
+$meta = false;
 $time = filemtime($this->file);
+$signalingException = new \UnexpectedValueException();
+$prevUnserializeHandler = ini_set('unserialize_callback_func','');
+$prevErrorHandler = set_error_handler(function ($type, $msg, $file, $line, $context) use (&$prevErrorHandler, $signalingException) {
+if (E_WARNING === $type &&'Class __PHP_Incomplete_Class has no unserializer'=== $msg) {
+throw $signalingException;
+}
+return $prevErrorHandler ? $prevErrorHandler($type, $msg, $file, $line, $context) : false;
+});
+try {
 $meta = unserialize(file_get_contents($metadata));
+} catch (\Error $e) {
+} catch (\Exception $e) {
+}
+restore_error_handler();
+ini_set('unserialize_callback_func', $prevUnserializeHandler);
+if (null !== $e && $e !== $signalingException) {
+throw $e;
+}
+if (false === $meta) {
+return false;
+}
 foreach ($meta as $resource) {
 if (!$resource->isFresh($time)) {
 return false;
@@ -3054,6 +3077,9 @@ $filesystem->chmod($this->getMetaFile(), $mode, $umask);
 } catch (IOException $e) {
 }
 }
+if (\function_exists('opcache_invalidate') && ini_get('opcache.enable')) {
+@opcache_invalidate($this->file, true);
+}
 }
 private function getMetaFile()
 {
@@ -3064,6 +3090,7 @@ return $this->file.'.meta';
 namespace Symfony\Component\HttpKernel
 {
 use Symfony\Component\HttpKernel\Controller\ControllerResolverInterface;
+use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
@@ -3073,6 +3100,7 @@ use Symfony\Component\HttpKernel\Event\GetResponseEvent;
 use Symfony\Component\HttpKernel\Event\GetResponseForControllerResultEvent;
 use Symfony\Component\HttpKernel\Event\GetResponseForExceptionEvent;
 use Symfony\Component\HttpKernel\Event\PostResponseEvent;
+use Symfony\Component\HttpFoundation\Exception\ConflictingHeadersException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\HttpFoundation\Response;
@@ -3094,6 +3122,9 @@ $request->headers->set('X-Php-Ob-Level', ob_get_level());
 try {
 return $this->handleRaw($request, $type);
 } catch (\Exception $e) {
+if ($e instanceof ConflictingHeadersException) {
+$e = new BadRequestHttpException('The request headers contain conflicting information regarding the origin of this request.', $e);
+}
 if (false === $catch) {
 $this->finishRequest($request, $type);
 throw $e;
@@ -3105,10 +3136,10 @@ public function terminate(Request $request, Response $response)
 {
 $this->dispatcher->dispatch(KernelEvents::TERMINATE, new PostResponseEvent($this, $request, $response));
 }
-public function terminateWithException(\Exception $exception)
+public function terminateWithException(\Exception $exception, Request $request = null)
 {
-if (!$request = $this->requestStack->getMasterRequest()) {
-throw new \LogicException('Request stack is empty', 0, $exception);
+if (!$request = $request ?: $this->requestStack->getMasterRequest()) {
+throw $exception;
 }
 $response = $this->handleException($exception, $request, self::MASTER_REQUEST);
 $response->sendHeaders();
@@ -3130,7 +3161,7 @@ $event = new FilterControllerEvent($this, $controller, $request, $type);
 $this->dispatcher->dispatch(KernelEvents::CONTROLLER, $event);
 $controller = $event->getController();
 $arguments = $this->resolver->getArguments($request, $controller);
-$response = call_user_func_array($controller, $arguments);
+$response = \call_user_func_array($controller, $arguments);
 if (!$response instanceof Response) {
 $event = new GetResponseForControllerResultEvent($this, $request, $type, $response);
 $this->dispatcher->dispatch(KernelEvents::VIEW, $event);
@@ -3231,7 +3262,7 @@ public function __construct(EventDispatcherInterface $dispatcher, ContainerInter
 {
 parent::__construct($dispatcher, $controllerResolver, $requestStack);
 if ($triggerDeprecation) {
-@trigger_error('The '.__CLASS__.' class is deprecated since version 2.7 and will be removed in 3.0. Use the Symfony\Component\HttpKernel\HttpKernel class instead.', E_USER_DEPRECATED);
+@trigger_error('The '.__CLASS__.' class is deprecated since Symfony 2.7 and will be removed in 3.0. Use the Symfony\Component\HttpKernel\HttpKernel class instead.', E_USER_DEPRECATED);
 }
 $this->container = $container;
 if (!$container->hasScope('request')) {

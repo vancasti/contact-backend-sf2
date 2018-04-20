@@ -3,6 +3,8 @@
 namespace AppBundle\Controller;
 
 use AppBundle\Form\NoteType;
+use AppBundle\Manager\ReadLogManager;
+use AppBundle\Manager\ObjectParser;
 use AppBundle\Model\Note;
 use AppBundle\Model\NoteCollection;
 
@@ -22,9 +24,9 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
  * Rest controller for notes
  *
  * @package AppBundle\Controller
- * @author Gordon Franke <info@nevalon.de>
+ * @author Victor Castiñeira <vancasti86@gmail.com>
  */
-class NoteController extends FOSRestController
+class ContactController extends FOSRestController
 {
     /**
      * return \AppBundle\NoteManager
@@ -44,22 +46,31 @@ class NoteController extends FOSRestController
      *   }
      * )
      *
-     * @Annotations\QueryParam(name="offset", requirements="\d+", nullable=true, description="Offset from which to start listing notes.")
-     * @Annotations\QueryParam(name="limit", requirements="\d+", default="5", description="How many notes to return.")
      *
      * @Annotations\View()
      *
-     * @param ParamFetcherInterface $paramFetcher param fetcher service
+     * @param int $phone the phone id
      *
      * @return array
      */
-    public function getNotesAction(ParamFetcherInterface $paramFetcher)
+    public function getContactsAction($phone)
     {
-        // $offset = $paramFetcher->get('offset');
-        // $start = null == $offset ? 0 : $offset + 1;
-        // $limit = $paramFetcher->get('limit');
-        // $notes = $this->getNoteManager()->fetch($start, $limit);
-        // return new NoteCollection($notes, $offset, $limit);
-        return new Response('SUCCESS');
+        $logManager = new ReadLogManager();
+        $parser = new ObjectParser();
+
+        if ($logManager->checkIfLogExists($phone)) {
+          $logManager->processFile();
+          $contacts = $logManager->generateContacts();
+          $communications = $logManager->generateCommunications();
+
+
+          $response = new Response();
+          $response->setContent(json_encode([
+              'contacts' => $contacts,
+              'communications' => $communications
+          ]));
+          $response->headers->set('Content-Type', 'application/json');
+          return $response;
+        }
     }
 }

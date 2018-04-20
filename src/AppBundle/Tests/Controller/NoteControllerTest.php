@@ -6,7 +6,7 @@ use Bazinga\Bundle\RestExtraBundle\Test\WebTestCase;
 use Symfony\Component\BrowserKit\Client;
 use Symfony\Component\HttpFoundation\Response;
 
-class NoteControllerTest extends WebTestCase
+class ContactControllerTest extends WebTestCase
 {
     protected function setUp()
     {
