@@ -37,7 +37,7 @@ class ContactController extends FOSRestController
     }
 
     /**
-     * List all notes.
+     * List all contacts & communications.
      *
      * @ApiDoc(
      *   resource = true,
@@ -60,9 +60,8 @@ class ContactController extends FOSRestController
 
         if ($logManager->checkIfLogExists($phone)) {
           $logManager->processFile();
-          $contacts = $logManager->generateContacts();
-          $communications = $logManager->generateCommunications();
-
+          $contacts = $logManager->getContacts();
+          $communications = $logManager->getCommunications();
 
           $response = new Response();
           $response->setContent(json_encode([

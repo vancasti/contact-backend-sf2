@@ -66,7 +66,7 @@ class Communication
 
     public function setIncoming($incoming)
     {
-        return $this->incoming = $incoming;
+        return $this->incoming = !!$incoming;
     }
 
     public function setContact($contact)
@@ -76,7 +76,7 @@ class Communication
 
     public function setDateTime($datetime)
     {
-        return $this->datetime = $datetime;
+        return $this->datetime = \DateTime::createFromFormat('dmYHis',$datetime)->format('d-m-Y H:i:s');
     }
 
     public function setDuration($duration)

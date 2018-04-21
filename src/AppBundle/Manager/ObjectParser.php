@@ -3,6 +3,7 @@
 namespace AppBundle\Manager;
 
 use AppBundle\Model\Communication;
+use AppBundle\Model\Contact;
 
 /**
  * Class ContactManager
@@ -14,41 +15,78 @@ use AppBundle\Model\Communication;
    /**
     * @var array
     */
-   private $contacts;
+   private static $contacts = [];
 
    /**
     * @var array
     */
-   private $communications;
+   private static $communications = [];
 
    /**
-    * Constructor
-    */
-   public function __construct()
-   {
-      $this->contacts = [];
-      $this->communications = [];
-   }
-
-   /**
-    *
+    * Add new communication
     */
    private function addCommunication($object)
    {
-      $this->communications[] = $object;
+      self::$communications[] = $object;
    }
 
    /**
-    *
+    * Add new contact
     */
-   public function parse(array $array)
+   private function addContact($object)
    {
+      self::$contacts[] = $object;
+   }
+
+   /**
+    * Parse communications array to objects
+    * @var array $array
+    */
+   public static function parseCommunications(array $array)
+   {
+      // var_dump($array);
       foreach ($array as $line) {
-        // $object = $this->toObject($line);
-        $this->generateContacts($line);
-        // $this->addCommunication($object);
+        $communication = new Communication();
+        foreach ($line as $key => $name) {
+          if($key == 'contact') {
+            $contactId = self::getContact($name);
+            $communication->setContact($contactId);
+          } else {
+            $method = "set{$key}";
+            $communication->{$method}($name);
+          }
+        }
+        self::addCommunication($communication);
       }
-      var_dump($this->contacts);
-      return $this->contacts;
+      return self::$communications;
+   }
+
+   /**
+    * Parse contacts array to object
+    * @var array $array
+    */
+   public static function parseContacts(array $array)
+   {
+      foreach ($array as $key => $name) {
+        $contact = new Contact();
+        $contact->setId($key);
+        $contact->setName($name);
+        self::addContact($contact);
+      }
+      return self::$contacts;
+   }
+
+   /**
+    * Get associated contact Id on a communication
+    * @var string $name
+    */
+   private static function getContact($name)
+   {
+     foreach(self::$contacts as $contact) {
+        if ($name == $contact->getName()) {
+           return $contact->getId();
+           break;
+        }
+      }
    }
  }

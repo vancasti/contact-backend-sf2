@@ -12,11 +12,6 @@ use AppBundle\Model\Communication;
 class ReadLogManager
 {
     /**
-     *
-     */
-    private $array_logs = [];
-
-    /**
      * @var array
      */
     private $array_contacts = [];
@@ -29,7 +24,7 @@ class ReadLogManager
     /**
      *
      */
-    private $array_fields_order = ['raw', 'type', 'origin',' destiny', 'incoming', 'contact', 'datetime', 'duration'];
+    private $array_fields_order = ['raw', 'type', 'origin', 'destiny', 'incoming', 'contact', 'datetime', 'duration'];
 
     /**
      *
@@ -59,7 +54,7 @@ class ReadLogManager
           ->in(__DIR__ . self::$logdir)
           ->name("communications.{$phone}.log");
 
-        //get one file
+        //get first file
         $iterator = $finder->getIterator();
         $iterator->rewind();
         $this->file = $iterator->current();
@@ -68,7 +63,7 @@ class ReadLogManager
     }
 
     /**
-     * Reads line by line
+     * Process file reading line by line
      */
     public function processFile()
     {
@@ -78,12 +73,10 @@ class ReadLogManager
       foreach ($lines as $line) {
         $this->processLine($line);
       }
-
-      return $this->array_logs;
     }
 
     /**
-     * Convert data row into array
+     * Convert raw data into array with preg_match
      *
      * @param string $line
      */
@@ -91,17 +84,17 @@ class ReadLogManager
     {
       if (preg_match(self::$regExp, $line, $matches)) {
         $hits = preg_match_all(self::$regExp, $line, $matches, PREG_PATTERN_ORDER);
-        $this->array_logs[] = $matches;
+        $this->generateContacts($matches);
+        $this->generateCommunications($matches);
       }
     }
 
     /**
      * Generate contact array
      */
-    public function generateContacts()
+    private function generateContacts($matches)
     {
-      foreach ($this->array_logs as $line) {
-       foreach ($line as $key => $field) {
+       foreach ($matches as $key => $field) {
          if ($key == 5) {
            $contactName = rtrim($field[0]);
            if (!in_array($contactName, $this->array_contacts)) {
@@ -109,25 +102,35 @@ class ReadLogManager
            }
          }
        }
-      }
-      return $this->array_contacts;
     }
 
     /**
      * Generate communications array
      */
-    public function generateCommunications()
+    private function generateCommunications($matches)
     {
       $communication = [];
 
-      foreach ($this->array_logs as $line) {
-       foreach ($line as $key => $field) {
+       foreach ($matches as $key => $field) {
           $property = $this->array_fields_order[$key];
           $communication[$property] = rtrim($field[0]);
         }
         array_push($this->array_communications, $communication);
-      }
+    }
 
-      return $this->array_communications;
+    /**
+     * Get communications
+     */
+    public function getCommunications()
+    {
+      return ObjectParser::parseCommunications($this->array_communications);
+    }
+
+    /**
+     * Get contacts
+     */
+    public function getContacts()
+    {
+      return ObjectParser::parseContacts($this->array_contacts);
     }
 }
