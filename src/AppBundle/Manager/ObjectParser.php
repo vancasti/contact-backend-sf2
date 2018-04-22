@@ -6,7 +6,7 @@ use AppBundle\Model\Communication;
 use AppBundle\Model\Contact;
 
 /**
- * Class ContactManager
+ * Class ObjectParser
  *
  * Convert raw data array into an object
  */
@@ -44,11 +44,11 @@ use AppBundle\Model\Contact;
     */
    public static function parseCommunications(array $array)
    {
-      // var_dump($array);
       foreach ($array as $line) {
         $communication = new Communication();
         foreach ($line as $key => $name) {
           if($key == 'contact') {
+            //set contact id instead if name to build a relationship
             $contactId = self::getContact($name);
             $communication->setContact($contactId);
           } else {
@@ -77,7 +77,7 @@ use AppBundle\Model\Contact;
    }
 
    /**
-    * Get associated contact Id on a communication
+    * Get associated contact searching on objects array
     * @var string $name
     */
    private static function getContact($name)

@@ -2,12 +2,6 @@
 
 namespace AppBundle\Controller;
 
-use AppBundle\Form\NoteType;
-use AppBundle\Manager\ReadLogManager;
-use AppBundle\Manager\ObjectParser;
-use AppBundle\Model\Note;
-use AppBundle\Model\NoteCollection;
-
 use FOS\RestBundle\Controller\Annotations;
 use FOS\RestBundle\Controller\FOSRestController;
 use FOS\RestBundle\Request\ParamFetcherInterface;
@@ -21,23 +15,17 @@ use Symfony\Component\Form\FormTypeInterface;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 /**
- * Rest controller for notes
+ * Rest controller for communication app
  *
  * @package AppBundle\Controller
  * @author Victor Castiñeira <vancasti86@gmail.com>
  */
 class ContactController extends FOSRestController
 {
-    /**
-     * return \AppBundle\NoteManager
-     */
-    public function getNoteManager()
-    {
-        return $this->get('app.note_manager');
-    }
+    static $logdir = '/../web/files/';
 
     /**
-     * List all contacts & communications.
+     * List all contacts
      *
      * @ApiDoc(
      *   resource = true,
@@ -45,31 +33,52 @@ class ContactController extends FOSRestController
      *     200 = "Returned when successful"
      *   }
      * )
-     *
-     *
      * @Annotations\View()
-     *
      * @param int $phone the phone id
-     *
      * @return array
      */
     public function getContactsAction($phone)
     {
-        $logManager = new ReadLogManager();
-        $parser = new ObjectParser();
+        $logManager = $this->get('app.log_manager');
+        $basepath = $this->get('kernel')->getRootDir() . self::$logdir;
+        $logManager->processFile($basepath, $phone);
+        $data = ['contacts' => $logManager->getContacts()];
+        return $this->responseJson($data);
+    }
 
-        if ($logManager->checkIfLogExists($phone)) {
-          $logManager->processFile();
-          $contacts = $logManager->getContacts();
-          $communications = $logManager->getCommunications();
+    /**
+     * List communications.
+     *
+     * @ApiDoc(
+     *   resource = true,
+     *   statusCodes = {
+     *     200 = "Returned when successful"
+     *   }
+     * )
+     * @Annotations\View()
+     * @param int $phone the phone id
+     * @return array
+     */
+    public function getCommunicationsAction($phone)
+    {
+        $logManager = $this->get('app.log_manager');
+        $basepath = $this->get('kernel')->getRootDir() . self::$logdir;
+        $logManager->processFile($basepath, $phone);
+        $logManager->getContacts();
+        $data = ['communications' => $logManager->getCommunications()];
+        return $this->responseJson($data);
+    }
 
-          $response = new Response();
-          $response->setContent(json_encode([
-              'contacts' => $contacts,
-              'communications' => $communications
-          ]));
-          $response->headers->set('Content-Type', 'application/json');
-          return $response;
-        }
+    /**
+     * Generates JSON response
+     * @var array $data
+     */
+    public function responseJson($data)
+    {
+      $response = new Response();
+      $response->setContent(json_encode($data));
+      $response->headers->set('Content-Type', 'application/json');
+      $response->headers->set('Access-Control-Allow-Origin', '*');
+      return $response;
     }
 }

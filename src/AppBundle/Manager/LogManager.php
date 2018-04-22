@@ -6,10 +6,10 @@ use Symfony\Component\Finder\Finder;
 use AppBundle\Model\Communication;
 
 /**
- * Class ReadLogManager
+ * Class LogManager
  * @package AppBundle\Manager
  */
-class ReadLogManager
+class LogManager
 {
     /**
      * @var array
@@ -22,61 +22,43 @@ class ReadLogManager
     private $array_communications = [];
 
     /**
-     *
+     * @var array fields order
      */
     private $array_fields_order = ['raw', 'type', 'origin', 'destiny', 'incoming', 'contact', 'datetime', 'duration'];
 
     /**
-     *
+     * @var string
      */
-    private $file;
+    private $filepath;
 
     /**
-     *
-     */
-    static $logdir = '/../Resources/files';
-
-    /**
-     *
+     * Regular expression pattern
      */
     static $regExp = '/^(C|S)([0-9]{9})([0-9]{9})([0-1])([a-zA-Z ]{1,24})([0-9]{14})([0-9]{6})*$/';
 
     /**
-     * @todo find by phone number
-     */
-    public function checkIfLogExists($phone)
-    {
-        $finder = new Finder();
-
-        //find file by coincidence
-        $finder
-          ->files()
-          ->in(__DIR__ . self::$logdir)
-          ->name("communications.{$phone}.log");
-
-        //get first file
-        $iterator = $finder->getIterator();
-        $iterator->rewind();
-        $this->file = $iterator->current();
-
-        return count($finder);
-    }
-
-    /**
      * Process file reading line by line
+     * @param string $basepath
+     * @param string $phone
      */
-    public function processFile()
+    public function processFile($basepath, $phone)
     {
-      $contents = $this->file->getContents();
-      $lines = explode(PHP_EOL, $contents);
+      $filepath = $basepath . "communications.{$phone}.log";
 
-      foreach ($lines as $line) {
-        $this->processLine($line);
+      if (file_exists($filepath)) {
+        $contents = file_get_contents($filepath, true);
+        $lines = explode(PHP_EOL, $contents);
+        foreach ($lines as $line) {
+          $this->processLine($line);
+        }
+      } else {
+        echo "Error: Document do not exists.";
       }
     }
 
     /**
-     * Convert raw data into array with preg_match
+     * Convert file raw data into array with preg_match function
+     * We capture all coincidences based on reg exp
      *
      * @param string $line
      */
@@ -90,13 +72,15 @@ class ReadLogManager
     }
 
     /**
-     * Generate contact array
+     * Generate contact array avoiding repeated
+     * @param array $matches Coincidences Array
      */
     private function generateContacts($matches)
     {
        foreach ($matches as $key => $field) {
-         if ($key == 5) {
+         if ($this->array_fields_order[$key] == 'contact') {
            $contactName = rtrim($field[0]);
+           //Check if contact is already included
            if (!in_array($contactName, $this->array_contacts)) {
              array_push($this->array_contacts, $contactName);
            }
@@ -106,6 +90,8 @@ class ReadLogManager
 
     /**
      * Generate communications array
+     * Changes keys by property name to parse an object after
+     * @param array $matches Coincidences Array
      */
     private function generateCommunications($matches)
     {
@@ -119,7 +105,7 @@ class ReadLogManager
     }
 
     /**
-     * Get communications
+     * Get communications parsed to an objects
      */
     public function getCommunications()
     {
@@ -127,7 +113,7 @@ class ReadLogManager
     }
 
     /**
-     * Get contacts
+     * Get contacts parsed to an objects
      */
     public function getContacts()
     {
