@@ -7,6 +7,7 @@ use AppBundle\Model\Communication;
 
 /**
  * Class LogManager
+ * Responsible for extracting fields matching the regular expression
  * @package AppBundle\Manager
  */
 class LogManager
@@ -109,7 +110,7 @@ class LogManager
      */
     public function getCommunications()
     {
-      return ObjectParser::parseCommunications($this->array_communications);
+      return ObjectMapper::parseCommunications($this->array_communications);
     }
 
     /**
@@ -117,6 +118,6 @@ class LogManager
      */
     public function getContacts()
     {
-      return ObjectParser::parseContacts($this->array_contacts);
+      return ObjectMapper::parseContacts($this->array_contacts);
     }
 }

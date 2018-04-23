@@ -6,11 +6,11 @@ use AppBundle\Model\Communication;
 use AppBundle\Model\Contact;
 
 /**
- * Class ObjectParser
+ * Class ObjectMapper
  *
  * Convert raw data array into an object
  */
- class ObjectParser
+ class ObjectMapper
  {
    /**
     * @var array
@@ -40,16 +40,16 @@ use AppBundle\Model\Contact;
 
    /**
     * Parse communications array to objects
-    * @var array $array
+    * @var array $matches
     */
-   public static function parseCommunications(array $array)
+   public static function parseCommunications(array $matches)
    {
-      foreach ($array as $line) {
+      foreach ($matches as $line) {
         $communication = new Communication();
         foreach ($line as $key => $name) {
           if($key == 'contact') {
-            //set contact id instead if name to build a relationship
-            $contactId = self::getContact($name);
+            //set contact id instead its name to build a relationship
+            $contactId = self::getContactId($name);
             $communication->setContact($contactId);
           } else {
             $method = "set{$key}";
@@ -63,11 +63,11 @@ use AppBundle\Model\Contact;
 
    /**
     * Parse contacts array to object
-    * @var array $array
+    * @var array $matches
     */
-   public static function parseContacts(array $array)
+   public static function parseContacts(array $matches)
    {
-      foreach ($array as $key => $name) {
+      foreach ($matches as $key => $name) {
         $contact = new Contact();
         $contact->setId($key);
         $contact->setName($name);
@@ -80,7 +80,7 @@ use AppBundle\Model\Contact;
     * Get associated contact searching on objects array
     * @var string $name
     */
-   private static function getContact($name)
+   private static function getContactId($name)
    {
      foreach(self::$contacts as $contact) {
         if ($name == $contact->getName()) {
